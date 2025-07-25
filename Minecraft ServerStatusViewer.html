@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minecraft Server Status Checker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .server-icon {
+            width: 64px;
+            height: 64px;
+            image-rendering: pixelated;
+        }
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        .minecraft-font {
+            font-family: 'Minecraft', sans-serif;
+        }
+        @font-face {
+            font-family: 'Minecraft';
+            src: url('https://fonts.cdnfonts.com/css/minecraft-4');
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <header class="text-center mb-12">
+            <h1 class="text-4xl md:text-5xl font-bold mb-2 minecraft-font text-green-400">Server Status Checker</h1>
+            <p class="text-gray-300 max-w-2xl mx-auto">Check the status of any Minecraft server in real-time</p>
+        </header>
+
+        <div class="max-w-2xl mx-auto bg-gray-800 rounded-lg shadow-lg p-6 mb-8 border-l-4 border-green-500">
+            <div class="flex flex-col md:flex-row gap-4 mb-6">
+                <input 
+                    type="text" 
+                    id="serverAddress" 
+                    placeholder="mc.example.com or 123.123.123.123:25565" 
+                    class="flex-grow px-4 py-3 rounded bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-green-500"
+                    value="mc.hypixel.net"
+                >
+                <button 
+                    id="checkBtn" 
+                    class="px-6 py-3 bg-green-600 hover:bg-green-700 rounded font-semibold transition-colors flex items-center justify-center gap-2"
+                >
+                    <i class="fas fa-search"></i> Check Status
+                </button>
+            </div>
+
+            <div id="errorMessage" class="hidden bg-red-900/50 border-l-4 border-red-500 p-4 mb-6 rounded"></div>
+
+            <div id="loading" class="hidden flex flex-col items-center justify-center py-8">
+                <div class="w-16 h-16 border-4 border-green-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                <p class="text-gray-300">Pinging server...</p>
+            </div>
+
+            <div id="result" class="hidden">
+                <div class="flex items-center gap-4 mb-6">
+                    <img id="serverIcon" src="https://api.mcstatus.io/v2/icon/mc.hypixel.net" alt="Server Icon" class="server-icon rounded">
+                    <div>
+                        <h2 id="serverName" class="text-2xl font-bold text-green-400"></h2>
+                        <p id="serverAddressDisplay" class="text-gray-300"></p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                    <div class="bg-gray-700/50 p-4 rounded">
+                        <h3 class="text-gray-400 text-sm uppercase mb-1">Status</h3>
+                        <p id="serverStatus" class="text-xl font-semibold flex items-center gap-2">
+                            <span id="statusIndicator" class="w-3 h-3 rounded-full"></span>
+                            <span id="statusText"></span>
+                        </p>
+                    </div>
+                    <div class="bg-gray-700/50 p-4 rounded">
+                        <h3 class="text-gray-400 text-sm uppercase mb-1">Version</h3>
+                        <p id="serverVersion" class="text-xl"></p>
+                    </div>
+                    <div class="bg-gray-700/50 p-4 rounded">
+                        <h3 class="text-gray-400 text-sm uppercase mb-1">Players</h3>
+                        <p id="serverPlayers" class="text-xl"></p>
+                    </div>
+                    <div class="bg-gray-700/50 p-4 rounded">
+                        <h3 class="text-gray-400 text-sm uppercase mb-1">Ping</h3>
+                        <p id="serverPing" class="text-xl"></p>
+                    </div>
+                </div>
+
+                <div id="playerListContainer" class="hidden bg-gray-700/50 p-4 rounded mb-4">
+                    <h3 class="text-gray-400 text-sm uppercase mb-3">Online Players</h3>
+                    <div id="playerList" class="flex flex-wrap gap-2"></div>
+                </div>
+
+                <div class="bg-gray-700/50 p-4 rounded">
+                    <h3 class="text-gray-400 text-sm uppercase mb-2">MOTD</h3>
+                    <div id="serverMotd" class="whitespace-pre-line font-mono text-gray-200"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="max-w-2xl mx-auto bg-gray-800 rounded-lg shadow-lg p-6">
+            <h2 class="text-xl font-bold mb-4 text-green-400">Recent Checks</h2>
+            <div id="historyList" class="space-y-3">
+                <div class="text-center py-4 text-gray-500" id="emptyHistory">
+                    No recent checks yet
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="text-center py-6 text-gray-500 text-sm">
+        <p>Minecraft Server Status Checker &copy; 2023</p>
+    </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const serverAddress = document.getElementById('serverAddress');
+            const checkBtn = document.getElementById('checkBtn');
+            const errorMessage = document.getElementById('errorMessage');
+            const loading = document.getElementById('loading');
+            const result = document.getElementById('result');
+            const historyList = document.getElementById('historyList');
+            const emptyHistory = document.getElementById('emptyHistory');
+
+            // Load history from localStorage
+            let history = JSON.parse(localStorage.getItem('mcServerHistory')) || [];
+            renderHistory();
+
+            checkBtn.addEventListener('click', checkServerStatus);
+            serverAddress.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    checkServerStatus();
+                }
+            });
+
+            function checkServerStatus() {
+                const address = serverAddress.value.trim();
+                
+                if (!address) {
+                    showError('Please enter a server address');
+                    return;
+                }
+
+                // Hide previous results and errors
+                errorMessage.classList.add('hidden');
+                result.classList.add('hidden');
+                loading.classList.remove('hidden');
+
+                // Use mcstatus.io API
+                fetch(`https://api.mcstatus.io/v2/status/java/${encodeURIComponent(address)}`)
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Server not found or not responding');
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        loading.classList.add('hidden');
+                        displayServerData(data, address);
+                        addToHistory(address, data.online);
+                    })
+                    .catch(error => {
+                        loading.classList.add('hidden');
+                        showError(error.message);
+                    });
+            }
+
+            function displayServerData(data, address) {
+                const serverName = document.getElementById('serverName');
+                const serverAddressDisplay = document.getElementById('serverAddressDisplay');
+                const serverStatus = document.getElementById('statusText');
+                const statusIndicator = document.getElementById('statusIndicator');
+                const serverVersion = document.getElementById('serverVersion');
+                const serverPlayers = document.getElementById('serverPlayers');
+                const serverPing = document.getElementById('serverPing');
+                const serverMotd = document.getElementById('serverMotd');
+                const playerListContainer = document.getElementById('playerListContainer');
+                const playerList = document.getElementById('playerList');
+                const serverIcon = document.getElementById('serverIcon');
+
+                // Set server icon (will return default if not available)
+                serverIcon.src = `https://api.mcstatus.io/v2/icon/${address}`;
+                serverIcon.onerror = function() {
+                    serverIcon.src = 'https://api.mcstatus.io/v2/icon/default';
+                };
+
+                serverName.textContent = data.motd.clean || address;
+                serverAddressDisplay.textContent = address;
+
+                if (data.online) {
+                    statusIndicator.className = 'w-3 h-3 rounded-full bg-green-500 pulse';
+                    serverStatus.textContent = 'Online';
+                    
+                    serverVersion.textContent = data.version.name_clean || 'Unknown';
+                    serverPlayers.textContent = `${data.players.online} / ${data.players.max}`;
+                    serverPing.textContent = `${data.round_trip_latency || 'Unknown'} ms`;
+                    serverMotd.textContent = data.motd.clean || 'No MOTD available';
+
+                    // Display player list if available
+                    if (data.players.list && data.players.list.length > 0) {
+                        playerListContainer.classList.remove('hidden');
+                        playerList.innerHTML = '';
+                        
+                        data.players.list.forEach(player => {
+                            const playerElement = document.createElement('div');
+                            playerElement.className = 'bg-gray-600 px-3 py-1 rounded flex items-center gap-2';
+                            playerElement.innerHTML = `
+                                <img src="https://mc-heads.net/avatar/${player.name_clean}/16" 
+                                     alt="${player.name_clean}" 
+                                     class="w-4 h-4 rounded-sm" 
+                                     onerror="this.src='https://mc-heads.net/avatar/MHF_Steve/16'">
+                                <span>${player.name_clean}</span>
+                            `;
+                            playerList.appendChild(playerElement);
+                        });
+                    } else {
+                        playerListContainer.classList.add('hidden');
+                    }
+                } else {
+                    statusIndicator.className = 'w-3 h-3 rounded-full bg-red-500';
+                    serverStatus.textContent = 'Offline';
+                    
+                    serverVersion.textContent = 'Unknown';
+                    serverPlayers.textContent = '0 / 0';
+                    serverPing.textContent = 'N/A';
+                    serverMotd.textContent = 'Server is offline';
+                    playerListContainer.classList.add('hidden');
+                }
+
+                result.classList.remove('hidden');
+            }
+
+            function showError(message) {
+                errorMessage.textContent = message;
+                errorMessage.classList.remove('hidden');
+            }
+
+            function addToHistory(address, isOnline) {
+                // Remove if already exists
+                history = history.filter(item => item.address !== address);
+                
+                // Add to beginning of array
+                history.unshift({
+                    address,
+                    isOnline,
+                    timestamp: new Date().toISOString()
+                });
+                
+                // Keep only last 5 items
+                if (history.length > 5) {
+                    history = history.slice(0, 5);
+                }
+                
+                localStorage.setItem('mcServerHistory', JSON.stringify(history));
+                renderHistory();
+            }
+
+            function renderHistory() {
+                if (history.length === 0) {
+                    emptyHistory.classList.remove('hidden');
+                    historyList.innerHTML = '';
+                    historyList.appendChild(emptyHistory);
+                    return;
+                }
+                
+                emptyHistory.classList.add('hidden');
+                historyList.innerHTML = '';
+                
+                history.forEach(item => {
+                    const historyItem = document.createElement('div');
+                    historyItem.className = 'bg-gray-700/50 hover:bg-gray-700/70 p-3 rounded cursor-pointer transition-colors';
+                    historyItem.innerHTML = `
+                        <div class="flex justify-between items-center">
+                            <div class="flex items-center gap-3">
+                                <div class="w-3 h-3 rounded-full ${item.isOnline ? 'bg-green-500' : 'bg-red-500'}"></div>
+                                <span class="font-medium">${item.address}</span>
+                            </div>
+                            <span class="text-gray-400 text-sm">${new Date(item.timestamp).toLocaleTimeString()}</span>
+                        </div>
+                    `;
+                    
+                    historyItem.addEventListener('click', () => {
+                        serverAddress.value = item.address;
+                        checkServerStatus();
+                    });
+                    
+                    historyList.appendChild(historyItem);
+                });
+            }
+
+            // Check Hypixel by default on page load
+            checkServerStatus();
+        });
+    </script>
+</body>
+</html>
